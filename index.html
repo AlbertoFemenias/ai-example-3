@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plano Inclinado Interactivo - Explosión Galáctica</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f4f8;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+        .container {
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            max-width: 950px; /* Adjusted for potentially wider layout */
+            width: 100%;
+            display: grid;
+            grid-template-columns: 1fr 280px; 
+            gap: 30px;
+            align-items: flex-start;
+        }
+        .simulation-main-area { /* New wrapper for canvas and its controls */
+            display: flex;
+            flex-direction: column;
+            gap: 15px; /* Space between canvas and actions panel */
+        }
+        h1 {
+            grid-column: 1 / -1; /* Span across if container is direct parent */
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            margin-top: 0;
+        }
+         /* If h1 is outside .container or inside a different grid setup, this might need adjustment */
+        .container > h1 { /* If h1 is a direct child of .container and needs to span */
+             grid-column: 1 / -1;
+        }
+
+
+        #simulationCanvas {
+            border: 1px solid #b0bec5;
+            background-color: #e3f2fd;
+            display: block;
+            width: 100%;
+            height: auto;
+            aspect-ratio: 4 / 3;
+            border-radius: 5px;
+            cursor: default;
+        }
+        .controls-info { /* This is the right sidebar */
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .controls, .info, .simulation-actions {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .simulation-actions { /* Panel below canvas */
+            width: 100%; /* Take full width of its column in simulation-main-area */
+        }
+
+        .control-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #34495e; font-size: 0.9em; }
+        input[type="range"] { width: 100%; cursor: pointer; accent-color: #3498db; }
+        .value-display { display: inline-block; min-width: 50px; text-align: right; font-weight: bold; color: #2980b9; font-size: 0.9em; }
+        .info h2, .simulation-actions h2 { margin-top: 0; margin-bottom: 10px; font-size: 1.1em; color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+        .info p { margin: 5px 0; font-size: 0.9em; color: #555; }
+        .info strong { color: #333; }
+        .status { font-weight: bold; padding: 5px 8px; border-radius: 4px; text-align: center; margin-top: 10px; font-size: 0.95em; }
+        .status.sliding { background-color: #e8f5e9; color: #2e7d32; } 
+        .status.static { background-color: #fff3e0; color: #ef6c00; } 
+        
+        .action-buttons {
+            display: flex; /* For side-by-side buttons */
+            flex-wrap: wrap; /* Allow wrapping if not enough space */
+            gap: 10px; /* Space between buttons */
+            justify-content: center; /* Center buttons */
+        }
+        .action-buttons button {
+            flex-grow: 1; /* Allow buttons to grow */
+            min-width: 120px; /* Minimum width for readability */
+            padding: 10px;
+            /* margin: 5px; */ /* Gap is used now */
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em; 
+            transition: background-color 0.2s ease;
+        }
+        .action-buttons button:hover:not(:disabled) { background-color: #2980b9; }
+        .action-buttons button:disabled { background-color: #bdc3c7; cursor: not-allowed;}
+        /* #resetButtonFullWidth can be removed if using flex-grow for all */
+        /* If reset needs to be full width below others, different structure needed */
+
+        #timerDisplay {
+            text-align: center; 
+            font-weight: bold; 
+            margin-bottom: 10px; /* Moved margin from top to bottom */
+            font-size: 1.1em;
+            padding: 8px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+            color: #2c3e50;
+        }
+
+        @media (max-width: 860px) { /* Adjusted breakpoint for layout shift */
+            .container { grid-template-columns: 1fr; }
+            h1 { font-size: 1.5em; }
+            .simulation-main-area {
+                 /* Canvas and actions will stack naturally */
+            }
+            .controls-info {
+                margin-top: 20px; /* Add some space when it moves below */
+            }
+            #simulationCanvas { height: 350px; aspect-ratio: unset; } /* Adjust height for smaller screens */
+        }
+         @media (max-width: 480px) {
+             .action-buttons button {
+                 width: 100%; /* Stack buttons fully on very small screens */
+                 margin-left: 0;
+                 margin-right: 0;
+             }
+         }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Plano Inclinado Interactivo</h1>
+
+        <div class="simulation-main-area">
+            <canvas id="simulationCanvas" width="600" height="450"></canvas>
+            <div class="simulation-actions">
+                <h2>Acciones de Simulación</h2>
+                <div id="timerDisplay">Tiempo: 0.00 s</div>
+                <div class="action-buttons">
+                    <button id="startButton">Iniciar</button>
+                    <button id="pauseButton" style="display:none;">Pausar</button>
+                    <button id="resetButton">Reiniciar Simulación</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="controls-info">
+            <div class="controls">
+                <h2>Controles de Parámetros</h2>
+                <div class="control-group">
+                    <label for="angleSlider">Ángulo (θ): <span id="angleValue" class="value-display">30</span>°</label>
+                    <input type="range" id="angleSlider" min="0" max="90" value="30" step="1">
+                </div>
+                <div class="control-group">
+                    <label for="massSlider">Masa (m): <span id="massValue" class="value-display">10</span> kg</label>
+                    <input type="range" id="massSlider" min="1" max="50" value="10" step="1">
+                </div>
+                <div class="control-group">
+                    <label for="frictionSlider">Fricción Cinética (μ<sub>k</sub>): <span id="frictionValue" class="value-display">0.20</span></label>
+                    <input type="range" id="frictionSlider" min="0" max="1" value="0.2" step="0.01">
+                </div>
+                <div class="control-group">
+                    <label for="gravitySlider">Gravedad (g): <span id="gravityValue" class="value-display">9.8</span> m/s²</label>
+                    <input type="range" id="gravitySlider" min="1" max="25" value="9.8" step="0.1">
+                </div>
+            </div>
+
+            <div class="info">
+                <h2>Valores Calculados</h2>
+                <p>Peso (W): <strong id="weight">0.00 N</strong></p>
+                <p>Fuerza Normal (F<sub>N</sub>): <strong id="normalForce">0.00 N</strong></p>
+                <p>Fuerza Paralela (F<sub>||</sub>): <strong id="parallelForce">0.00 N</strong></p>
+                <p>Fuerza de Fricción (F<sub>k</sub>): <strong id="frictionForce">0.00 N</strong></p>
+                <p>Fuerza Neta (F<sub>neta</sub>): <strong id="netForce">0.00 N</strong></p>
+                <p>Aceleración (a): <strong id="acceleration">0.00 m/s²</strong></p>
+                <p>Velocidad (v): <strong id="velocityDisplay">0.00 m/s</strong></p>
+                <p>Espacio Recorrido (s): <strong id="distanceDisplay">0.00 m</strong></p>
+                <div id="status" class="status">Calculando...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        const angleSlider = document.getElementById('angleSlider');
+        const massSlider = document.getElementById('massSlider');
+        const frictionSlider = document.getElementById('frictionSlider');
+        const gravitySlider = document.getElementById('gravitySlider');
+        const angleValue = document.getElementById('angleValue');
+        const massValue = document.getElementById('massValue');
+        const frictionValue = document.getElementById('frictionValue');
+        const gravityValue = document.getElementById('gravityValue');
+        const weightEl = document.getElementById('weight');
+        const normalForceEl = document.getElementById('normalForce');
+        const parallelForceEl = document.getElementById('parallelForce');
+        const frictionForceEl = document.getElementById('frictionForce');
+        const netForceEl = document.getElementById('netForce');
+        const accelerationEl = document.getElementById('acceleration');
+        const statusEl = document.getElementById('status');
+        
+        const startButton = document.getElementById('startButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const resetButton = document.getElementById('resetButton'); 
+        const timerDisplayEl = document.getElementById('timerDisplay');
+        const velocityDisplayEl = document.getElementById('velocityDisplay'); 
+        const distanceDisplayEl = document.getElementById('distanceDisplay'); 
+
+        const BASE_BLOCK_WIDTH = 30;
+        const BASE_BLOCK_HEIGHT = 20;
+        const PIXEL_PER_METER = 20; 
+        const INITIAL_POS_ON_SLOPE = 30; 
+        const VELOCITY_VECTOR_SCALE = 0.2; // Adjust as needed for good visualization
+
+        let audioCtx = null;
+        let masterGain = null;
+        let audioInitialized = false;
+        let hasCrashed = false;
+        const fixedVolume = 0.5;
+
+        function initAudio() {
+            if (audioInitialized) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                masterGain = audioCtx.createGain();
+                masterGain.gain.setValueAtTime(fixedVolume, audioCtx.currentTime);
+                masterGain.connect(audioCtx.destination);
+                audioInitialized = true;
+            } catch (e) {
+                console.error("Fallo en la inicialización de la Web Audio API.", e);
+            }
+        }
+
+        function resumeAudioContext() {
+             if (audioCtx && audioCtx.state === 'suspended') {
+                 audioCtx.resume().catch(e => console.error('Error al reanudar AudioContext:', e));
+             }
+        }
+
+        let angle = parseFloat(angleSlider.value);
+        let mass = parseFloat(massSlider.value);
+        let mu_k = parseFloat(frictionSlider.value);
+        let g = parseFloat(gravitySlider.value);
+        let block = { posOnSlope: INITIAL_POS_ON_SLOPE, velocity: 0, acceleration: 0 };
+        
+        let animationFrameId = null;
+        let lastTimestamp = 0;
+        let scale = 1; 
+
+        let simulationRunning = false;
+        let elapsedTime = 0; 
+
+        function getBlockDimensions(currentMass) {
+            return {
+                width: BASE_BLOCK_WIDTH,
+                height: BASE_BLOCK_HEIGHT
+            };
+        }
+
+        function calculatePhysics() {
+            const angleRad = angle * Math.PI / 180;
+            const W = mass * g; 
+            const W_perp = W * Math.cos(angleRad); 
+            const W_parallel = W * Math.sin(angleRad);
+            const N = (angle <= 90) ? W_perp : 0; 
+            const F_k_potential = mu_k * N;
+            let F_net = 0, a = 0, F_friction_actual = 0;
+            let statusText = "", statusClass = "static";
+
+            if (angle === 0) {
+                F_net = 0; a = 0; F_friction_actual = 0; statusText = "Estático (Horizontal)";
+            } else if (W_parallel <= F_k_potential && mu_k > 0 && block.velocity < 1e-3) { // Check velocity for static condition start
+                F_net = 0; a = 0; F_friction_actual = W_parallel; statusText = "Estático";
+            } else {
+                F_friction_actual = F_k_potential; 
+                F_net = Math.max(0, W_parallel - F_friction_actual); // Force net can't be negative if friction is kinetic
+                 if (W_parallel < F_friction_actual && block.velocity < 1e-3 && mu_k > 0) { // Object might stop if F_par < F_fric_static (approx by F_fric_kinetic here)
+                    F_net = 0; a = 0; F_friction_actual = W_parallel; 
+                    statusText = "Estático (Detenido)"; statusClass = "static";
+                 } else {
+                    a = (mass > 0) ? F_net / mass : 0;
+                    if (a > 1e-6 || block.velocity > 1e-3) { // If it has acceleration or was already moving
+                        statusText = "Deslizando Abajo"; statusClass = "sliding"; 
+                    } else { 
+                        F_net = 0; a = 0; F_friction_actual = W_parallel; 
+                        statusText = "Estático (Equilibrado)"; statusClass = "static"; 
+                    }
+                 }
+            }
+
+            weightEl.textContent = `${W.toFixed(2)} N`; 
+            normalForceEl.textContent = `${N.toFixed(2)} N`;
+            parallelForceEl.textContent = `${W_parallel.toFixed(2)} N`; 
+            frictionForceEl.textContent = `${F_friction_actual.toFixed(2)} N`;
+            netForceEl.textContent = `${F_net.toFixed(2)} N`; 
+            accelerationEl.textContent = `${a.toFixed(2)} m/s²`;
+            statusEl.textContent = statusText; 
+            statusEl.className = `status ${statusClass}`;
+            block.acceleration = a; 
+            return { W, N, W_parallel, F_friction_actual, F_net, a, angleRad };
+        }
+
+        function updateDynamicDisplays() {
+            const velocity_mps = block.velocity / PIXEL_PER_METER;
+            const distance_m = (block.posOnSlope - INITIAL_POS_ON_SLOPE) / PIXEL_PER_METER;
+
+            velocityDisplayEl.textContent = `${velocity_mps.toFixed(2)} m/s`;
+            distanceDisplayEl.textContent = `${Math.max(0, distance_m).toFixed(2)} m`; 
+            timerDisplayEl.textContent = `Tiempo: ${elapsedTime.toFixed(2)} s`;
+        }
+
+        function drawArrow(x1, y1, x2, y2, color = 'black', lineWidth = 2, label = '', labelOffset = { x: 5, y: -5 }) { 
+            const headlen = 10; 
+            const angleArrow = Math.atan2(y2 - y1, x2 - x1); 
+            ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lineWidth; 
+            ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); 
+            // Arrowhead
+            if (Math.sqrt(Math.pow(x2-x1,2) + Math.pow(y2-y1,2)) > headlen) { // Only draw arrowhead if vector is long enough
+                ctx.lineTo(x2 - headlen * Math.cos(angleArrow - Math.PI / 6), y2 - headlen * Math.sin(angleArrow - Math.PI / 6)); 
+                ctx.moveTo(x2, y2); 
+                ctx.lineTo(x2 - headlen * Math.cos(angleArrow + Math.PI / 6), y2 - headlen * Math.sin(angleArrow + Math.PI / 6)); 
+            }
+            ctx.stroke(); 
+            if (label) { 
+                ctx.font = '12px Arial'; ctx.textAlign = 'start'; ctx.textBaseline = 'middle'; 
+                ctx.fillText(label, x2 + labelOffset.x, y2 + labelOffset.y); 
+            } 
+        }
+        function drawSimulation() {
+            const physicsData = calculatePhysics(); // Call once per draw
+            const { W, N, W_parallel, F_friction_actual, F_net, angleRad } = physicsData;
+            const { width: currentBlockWidth, height: currentBlockHeight } = getBlockDimensions(mass);
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#e3f2fd'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            const planeBaseWidth = canvas.width * 0.8; 
+            let planeHeight = planeBaseWidth * Math.tan(angleRad); // Use let for planeHeight
+            const originX = canvas.width * 0.1; 
+            const originY = canvas.height * 0.85;
+            
+            let actualBase = planeBaseWidth; 
+            let actualHeight = planeHeight;
+            
+            // Adjust plane dimensions to fit canvas
+            const minYPlaneTop = canvas.height * 0.1;
+            if (originY - actualHeight < minYPlaneTop) { 
+                actualHeight = originY - minYPlaneTop; 
+                if (angleRad === 0) { actualBase = planeBaseWidth; } 
+                else if (angleRad === Math.PI / 2) { actualBase = 0; actualHeight = originY - minYPlaneTop; } // Ensure actualHeight is used for 90 deg
+                else { actualBase = actualHeight / Math.tan(angleRad); } 
+            } 
+             if (angleRad === Math.PI / 2) { actualBase = 0; actualHeight = originY - minYPlaneTop; }
+
+
+            const planeTopX = originX; 
+            const planeTopY = originY - actualHeight; 
+            const planeEndX = originX + actualBase; 
+            const planeEndY = originY;
+            
+            // Draw Plane
+            ctx.fillStyle = '#bdc3c7'; ctx.strokeStyle = '#7f8c8d'; ctx.lineWidth = 2; 
+            ctx.beginPath(); 
+            ctx.moveTo(planeTopX, planeTopY); 
+            ctx.lineTo(planeEndX, planeEndY); 
+            ctx.lineTo(originX, originY); 
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+            
+            // Draw Angle Arc
+            if (angle > 0 && angle < 90) { 
+                ctx.beginPath(); 
+                ctx.arc(originX, originY, 30, -angleRad, 0); 
+                ctx.strokeStyle = '#3498db'; ctx.lineWidth = 1; ctx.stroke(); 
+                ctx.fillStyle = '#3498db'; ctx.font = '12px Arial'; 
+                ctx.textAlign = 'center'; ctx.textBaseline = 'top'; 
+                ctx.fillText(`θ`, originX + 20 * Math.cos(angleRad / 2), originY - 20 * Math.sin(angleRad / 2) -5); 
+            }
+
+            // Draw Start Position Marker
+            let markerLineX, markerLineY;
+            if (angleRad === Math.PI / 2) { 
+                markerLineX = planeTopX;
+                markerLineY = planeTopY + INITIAL_POS_ON_SLOPE;
+            } else {
+                markerLineX = planeTopX + INITIAL_POS_ON_SLOPE * Math.cos(angleRad);
+                markerLineY = planeTopY + INITIAL_POS_ON_SLOPE * Math.sin(angleRad);
+            }
+            const markerPerpLength = 8; 
+            ctx.strokeStyle = 'rgba(0, 100, 0, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(markerLineX - markerPerpLength * Math.sin(angleRad), 
+                       markerLineY + markerPerpLength * Math.cos(angleRad));
+            ctx.lineTo(markerLineX + markerPerpLength * Math.sin(angleRad), 
+                       markerLineY - markerPerpLength * Math.cos(angleRad));
+            ctx.stroke();
+
+
+            // Calculate Block Center
+            let blockCenterX_onSlope, blockCenterY_onSlope;
+            if (angleRad === Math.PI / 2) { 
+                blockCenterX_onSlope = planeTopX; 
+                blockCenterY_onSlope = planeTopY + block.posOnSlope; 
+            } else { 
+                blockCenterX_onSlope = planeTopX + block.posOnSlope * Math.cos(angleRad); 
+                blockCenterY_onSlope = planeTopY + block.posOnSlope * Math.sin(angleRad); 
+            }
+
+            // Draw Block
+            ctx.save();
+            ctx.translate(blockCenterX_onSlope, blockCenterY_onSlope);
+            ctx.rotate(angleRad);
+            ctx.fillStyle = '#e74c3c'; ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1;
+            ctx.fillRect(-currentBlockWidth / 2, -currentBlockHeight, currentBlockWidth, currentBlockHeight);
+            ctx.strokeRect(-currentBlockWidth / 2, -currentBlockHeight, currentBlockWidth, currentBlockHeight);
+            ctx.restore();
+
+            // --- Draw Force Vectors ---
+            const vectorOriginX = blockCenterX_onSlope;
+            // Adjust vectorOriginY to be closer to the center of the block for visual balance.
+            // The block is drawn from -currentBlockHeight (top) to 0 (bottom) in its rotated frame.
+            // So, its visual center in the rotated frame is at y = -currentBlockHeight / 2.
+            // We need to project this back to the unrotated canvas.
+            const blockCenterOffsetY = -currentBlockHeight / 2;
+            const vectorOriginY_adjusted = blockCenterY_onSlope + blockCenterOffsetY * Math.cos(angleRad);
+            const vectorOriginX_adjusted = blockCenterX_onSlope - blockCenterOffsetY * Math.sin(angleRad);
+
+
+            const maxForceMag = Math.max(W, N, W_parallel, F_friction_actual, 1); 
+            scale = 80 / maxForceMag;
+            
+            if (W > 0) { drawArrow(vectorOriginX_adjusted, vectorOriginY_adjusted, vectorOriginX_adjusted, vectorOriginY_adjusted + W * scale, '#2c3e50', 2, `W (${W.toFixed(1)}N)`); }
+            if (N > 0) { 
+                const Nx_vec = N * Math.sin(angleRad); const Ny_vec = -N * Math.cos(angleRad); 
+                drawArrow(vectorOriginX_adjusted, vectorOriginY_adjusted, vectorOriginX_adjusted + Nx_vec * scale, vectorOriginY_adjusted + Ny_vec * scale, '#27ae60', 2, `F\u2099 (${N.toFixed(1)}N)`, { x: -40, y: -15 }); 
+            }
+            if (F_friction_actual > 0 && angle > 0 && mu_k > 0) { 
+                const FkX_vec = -F_friction_actual * Math.cos(angleRad); const FkY_vec = -F_friction_actual * Math.sin(angleRad); 
+                drawArrow(vectorOriginX_adjusted, vectorOriginY_adjusted, vectorOriginX_adjusted + FkX_vec * scale, vectorOriginY_adjusted + FkY_vec * scale, '#e67e22', 2, `F\u2097 (${F_friction_actual.toFixed(1)}N)`, { x: -40, y: 5 }); 
+            }
+            if (Math.abs(F_net) > 1e-3) { 
+                const FnetX_vec = F_net * Math.cos(angleRad); const FnetY_vec = F_net * Math.sin(angleRad); 
+                // Offset F_net vector slightly for visibility if overlapping with W_parallel component
+                let Fnet_originX = vectorOriginX_adjusted + 5 * Math.sin(angleRad); // Offset perpendicular to slope
+                let Fnet_originY = vectorOriginY_adjusted - 5 * Math.cos(angleRad);
+                drawArrow(Fnet_originX, Fnet_originY, Fnet_originX + FnetX_vec * scale * 1.5, Fnet_originY + FnetY_vec * scale * 1.5, '#8e44ad', 3, `F\u2099\u2091\u209C\u2090 (${F_net.toFixed(1)}N)`); 
+            }
+
+            // --- Draw Velocity Vector ---
+            if (simulationRunning && Math.abs(block.velocity) > 1) { // Threshold for drawing velocity
+                const velVectorLength = block.velocity * VELOCITY_VECTOR_SCALE;
+                let velEndX, velEndY;
+                if (angleRad === Math.PI / 2) { // Straight down
+                    velEndX = vectorOriginX_adjusted;
+                    velEndY = vectorOriginY_adjusted + velVectorLength;
+                } else { // Along slope
+                    velEndX = vectorOriginX_adjusted + velVectorLength * Math.cos(angleRad);
+                    velEndY = vectorOriginY_adjusted + velVectorLength * Math.sin(angleRad);
+                }
+                drawArrow(vectorOriginX_adjusted, vectorOriginY_adjusted, velEndX, velEndY, '#FF00FF', 2, 'v'); // Magenta for velocity
+            }
+            ctx.lineWidth = 1; // Reset default line width
+        }
+
+        function playCrashSound(impactVelocity) {
+            if (!audioInitialized || hasCrashed) return;
+            try {
+                resumeAudioContext();
+                // ... (rest of sound code is the same)
+                const now = audioCtx.currentTime;
+                const explosionDuration = 1.5;
+                const MAX_EXPECTED_VELOCITY = 1000; const MIN_INTENSITY = 0.15;
+                const normalizedIntensity = Math.min(1.0, Math.max(0, Math.abs(impactVelocity) / MAX_EXPECTED_VELOCITY));
+                const scaledIntensity = MIN_INTENSITY + normalizedIntensity * (1.0 - MIN_INTENSITY);
+
+                const toneOsc = audioCtx.createOscillator(); const toneGain = audioCtx.createGain();
+                toneOsc.type = 'sawtooth'; toneGain.connect(masterGain); toneOsc.connect(toneGain);
+                const startFreq = 80; const endFreq = 25;
+                const baseTonePeakVolume = 0.7; const actualTonePeakVolume = baseTonePeakVolume * scaledIntensity;
+                toneOsc.frequency.setValueAtTime(startFreq, now);
+                toneOsc.frequency.exponentialRampToValueAtTime(endFreq, now + explosionDuration * 0.6);
+                toneGain.gain.setValueAtTime(0, now);
+                toneGain.gain.linearRampToValueAtTime(actualTonePeakVolume, now + 0.03);
+                toneGain.gain.exponentialRampToValueAtTime(0.001, now + explosionDuration);
+
+                const noiseBufferSize = audioCtx.sampleRate * explosionDuration;
+                const noiseBuffer = audioCtx.createBuffer(1, noiseBufferSize, audioCtx.sampleRate);
+                const output = noiseBuffer.getChannelData(0); let lastOut = 0.0;
+                for (let i = 0; i < noiseBufferSize; i++) { const white = Math.random() * 2 - 1; output[i] = (lastOut + (0.02 * white)) / 1.02; lastOut = output[i]; output[i] *= 3.5; }
+                const noiseSource = audioCtx.createBufferSource(); noiseSource.buffer = noiseBuffer;
+                const noiseGain = audioCtx.createGain(); const noiseFilter = audioCtx.createBiquadFilter();
+                noiseFilter.type = "lowpass"; noiseFilter.frequency.setValueAtTime(300, now); noiseFilter.Q.setValueAtTime(1, now);
+                noiseSource.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(masterGain);
+                const baseNoisePeakVolume = 0.9; const actualNoisePeakVolume = baseNoisePeakVolume * scaledIntensity;
+                noiseGain.gain.setValueAtTime(0, now);
+                noiseGain.gain.linearRampToValueAtTime(actualNoisePeakVolume, now + 0.05);
+                noiseGain.gain.exponentialRampToValueAtTime(0.001, now + explosionDuration * 0.9);
+
+                toneOsc.start(now); noiseSource.start(now);
+                toneOsc.stop(now + explosionDuration + 0.1); noiseSource.stop(now + explosionDuration + 0.1);
+                hasCrashed = true;
+            } catch (e) { console.error("Error al reproducir sonido de impacto:", e); }
+        }
+
+        function animate(timestamp) {
+            if (!simulationRunning) { 
+                if (animationFrameId) cancelAnimationFrame(animationFrameId); 
+                animationFrameId = null;
+                return;
+            }
+
+            if (!lastTimestamp) { lastTimestamp = timestamp; }
+            const deltaTime = (timestamp - lastTimestamp) / 1000;
+            lastTimestamp = timestamp;
+            
+            if (deltaTime <= 0 || deltaTime > 0.1) { 
+                animationFrameId = requestAnimationFrame(animate);
+                return;
+            }
+
+            elapsedTime += deltaTime;
+            
+            const current_a_m_s2 = block.acceleration; 
+            
+            if (Math.abs(current_a_m_s2) > 1e-6 || Math.abs(block.velocity) > 1e-3) { // Allow deceleration to stop
+                let pixel_acceleration = current_a_m_s2 * PIXEL_PER_METER;
+                
+                block.posOnSlope += block.velocity * deltaTime + 0.5 * pixel_acceleration * deltaTime * deltaTime;
+                block.velocity += pixel_acceleration * deltaTime;
+
+                // If acceleration is zero but velocity isn't, it's constant velocity (e.g. net force zero but moving)
+                // If it stops due to friction (a becomes 0 or negative trying to reverse velocity), set velocity to 0.
+                if (current_a_m_s2 < 1e-6 && W_parallel <= mu_k * mass * g * Math.cos(angle * Math.PI / 180) && Math.abs(block.velocity) < 1) { // crude stop condition
+                     //block.velocity = 0; // This might be handled by calculatePhysics now better
+                }
+
+
+            } else { 
+                block.velocity = 0; 
+            }
+            if (block.acceleration < 1e-6 && Math.abs(block.velocity) < 1) { // If effectively no acceleration and very slow, stop it.
+                block.velocity = 0;
+            }
+
+
+            const { angleRad } = calculatePhysics(); // Call to update status and get angleRad
+            const { width: currentBlockWidth, height: currentBlockHeight } = getBlockDimensions(mass);
+            let hitBoundary = false;
+            let finalVelocity = 0;
+
+            const planeBaseWidth = canvas.width * 0.8; 
+            let currentActualHeight = planeBaseWidth * Math.tan(angleRad); 
+            const originY = canvas.height * 0.85; 
+            const minYPlaneTop = canvas.height * 0.1;
+            if (originY - currentActualHeight < minYPlaneTop) { 
+                currentActualHeight = originY - minYPlaneTop; 
+            } 
+            let currentActualBase; 
+            if (angleRad === 0) { currentActualBase = planeBaseWidth; } 
+            else if (angleRad === Math.PI / 2) { currentActualBase = 0; currentActualHeight = originY - minYPlaneTop; } 
+            else { currentActualBase = currentActualHeight / Math.tan(angleRad); } 
+            const slopeLengthPixels = Math.sqrt(currentActualBase * currentActualBase + currentActualHeight * currentActualHeight);
+            
+            const planeTopMargin = 10; 
+            let planeBottomMargin = currentBlockHeight / 2 + 5; // Simplified, works for most cases
+             if (angleRad < Math.PI / 2 && Math.cos(angleRad) > 1e-6) {
+                 planeBottomMargin = Math.max( (currentBlockWidth / 2) / Math.cos(angleRad) , currentBlockHeight/2) + 5;
+            }
+
+
+             if (block.posOnSlope < planeTopMargin) {
+                 block.posOnSlope = planeTopMargin; 
+                 if (block.velocity < 0) block.velocity = 0;
+             }
+             if (block.posOnSlope >= slopeLengthPixels - planeBottomMargin) {
+                 block.posOnSlope = slopeLengthPixels - planeBottomMargin;
+                 finalVelocity = block.velocity; 
+                 if (block.velocity > 1e-3) { 
+                    block.velocity = 0; 
+                    hitBoundary = true; 
+                 } else {
+                    block.velocity = 0; 
+                 }
+             }
+
+             if (hitBoundary && !hasCrashed) { 
+                playCrashSound(finalVelocity / PIXEL_PER_METER); // Pass velocity in m/s
+             }
+
+            drawSimulation(); 
+            updateDynamicDisplays(); 
+            
+            if (simulationRunning) { 
+                animationFrameId = requestAnimationFrame(animate);
+            }
+        }
+
+        function startSimulation() {
+            if (!simulationRunning) {
+                initAudio(); 
+                resumeAudioContext();
+                simulationRunning = true;
+                lastTimestamp = performance.now(); 
+                if (animationFrameId) cancelAnimationFrame(animationFrameId); 
+                // Ensure physics are calculated for the current state before starting animation loop
+                calculatePhysics(); 
+                animationFrameId = requestAnimationFrame(animate);
+                
+                startButton.disabled = true;
+                startButton.style.display = 'none';
+                pauseButton.disabled = false;
+                pauseButton.style.display = 'inline-block';
+            }
+        }
+
+        function pauseSimulation() {
+            if (simulationRunning) {
+                simulationRunning = false;
+                if (animationFrameId) {
+                    cancelAnimationFrame(animationFrameId);
+                    animationFrameId = null;
+                }
+                startButton.disabled = false;
+                startButton.style.display = 'inline-block';
+                pauseButton.disabled = true;
+                pauseButton.style.display = 'none';
+            }
+        }
+
+        function resetSimulation() {
+            simulationRunning = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            
+            block.posOnSlope = INITIAL_POS_ON_SLOPE;
+            block.velocity = 0;
+            elapsedTime = 0;
+            lastTimestamp = 0; 
+            hasCrashed = false;
+
+            calculatePhysics(); // This will update block.acceleration based on initial params
+            drawSimulation();   
+            updateDynamicDisplays(); 
+
+            startButton.disabled = false;
+            startButton.style.display = 'inline-block';
+            pauseButton.disabled = true;
+            pauseButton.style.display = 'none';
+        }
+        
+        function handleInputChange(event) {
+            simulationRunning = false; 
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            
+            mass = parseFloat(massSlider.value);
+            angle = parseFloat(angleSlider.value);
+            mu_k = parseFloat(frictionSlider.value);
+            g = parseFloat(gravitySlider.value);
+
+            angleValue.textContent = angle; 
+            massValue.textContent = mass;
+            frictionValue.textContent = mu_k.toFixed(2); 
+            gravityValue.textContent = g.toFixed(1);
+
+            block.posOnSlope = INITIAL_POS_ON_SLOPE; 
+            block.velocity = 0;
+            hasCrashed = false; 
+            // elapsedTime is not reset here by default
+            
+            calculatePhysics(); 
+            drawSimulation();
+            updateDynamicDisplays(); 
+
+            startButton.disabled = false;
+            startButton.style.display = 'inline-block';
+            pauseButton.disabled = true;
+            pauseButton.style.display = 'none';
+        }
+
+        angleSlider.addEventListener('input', handleInputChange); 
+        massSlider.addEventListener('input', handleInputChange);
+        frictionSlider.addEventListener('input', handleInputChange); 
+        gravitySlider.addEventListener('input', handleInputChange);
+        
+        startButton.addEventListener('click', startSimulation);
+        pauseButton.addEventListener('click', pauseSimulation);
+        resetButton.addEventListener('click', resetSimulation);
+
+        resetSimulation(); 
+    </script>
+</body>
+</html>
